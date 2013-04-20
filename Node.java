@@ -1,4 +1,4 @@
-import java.util.ArrayList;
+import java.util.*;
 
 public class Node {
 
@@ -6,10 +6,11 @@ public class Node {
 
 	public boolean[] childIsResult;
 	public String [] result;
-	public ArrayList<Node> childNodes;
+	public Dictionary<Integer, Node> childNodes;
 
 	public Node(int numChildren){
 		if(numChildren > 0){
+			childNodes    = new Hashtable<Integer, Node>();
 			childIsResult = new boolean[numChildren];
 			result        = new String [numChildren];
 		}

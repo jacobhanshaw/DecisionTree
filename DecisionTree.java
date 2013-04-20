@@ -8,7 +8,7 @@ import java.util.Scanner;
 public class DecisionTree {
 
 	private static String[] classLabels;
-	private static ArrayList<Attribute> attributes = new ArrayList<Attribute>();
+	private static ArrayList<Attribute> attributesGlobal = new ArrayList<Attribute>();
 	private static ArrayList<String[]> casesGlobal = new ArrayList<String[]>();
 
 	private static int modelFlag;
@@ -22,22 +22,33 @@ public class DecisionTree {
 		File trainingFile = new File(args[1]);
 		File testingFile = new File(args[2]);
 
-		parse(trainingFile, false);
+		parse(trainingFile);
 
 		buildTree();
-		
+
 		if(modelFlag == 1) printTree();
-		else if(modelFlag == 2){
-			parse(testingFile, true);
-			//TODO: use casesGlobal to find answer
-		}
-	}
-	
-	private static void printTree() {
-		//TODO: Implement
+		else if(modelFlag == 2) solve(testingFile);
 	}
 
-	private static void parse(File input, boolean testSet) {
+	private static void printTree() {
+		System.out.print("Root ");
+		String tabString = "";
+		printNode(root, tabString);
+	}
+
+	private static void printNode(Node currentNode, String tabString) {
+		System.out.println("{" + currentNode.attributeDecided.name + "?}");
+		tabString += "\t";
+
+		for(int i = 0; i < numAttributeValues; ++i){
+			System.out.print(tabString + currentNode.attributeDecided.possibleValues[i] + " ");
+			if(currentNode.childIsResult[i]) System.out.println("(" + currentNode.result[i] + ")");
+			else printNode(currentNode.childNodes.get(i), tabString);
+		}
+
+	}
+
+	private static void parse(File input) {
 		Scanner in;
 		try {
 			in = new Scanner(input);
@@ -46,13 +57,13 @@ public class DecisionTree {
 			{
 				line = in.nextLine();
 
-				if (!testSet && line.charAt(0) == '%' && line.charAt(1) == '%') 
+				if (line.charAt(0) == '%' && line.charAt(1) == '%') 
 				{
 					line = line.substring(2);
 					classLabels =  line.split("[\\s,]");
 				}
 
-				else if (!testSet && line.charAt(0) == '#' && line.charAt(1) == '#')
+				else if (line.charAt(0) == '#' && line.charAt(1) == '#')
 				{
 					line = line.substring(2);
 					Attribute current = new Attribute();
@@ -60,11 +71,12 @@ public class DecisionTree {
 					current.name = tokens[0];
 					current.possibleValues = new String[tokens.length-1];
 					if(numAttributeValues == 0) numAttributeValues = current.possibleValues.length;
-					for(int i = 1; i < tokens.length-1; ++i)
+					for(int i = 1; i < tokens.length; ++i)
 					{
-						current.possibleValues[i] = tokens[i];
+						current.possibleValues[i-1] = tokens[i];
 					}
-					attributes.add(current);
+					current.originalIndex = attributesGlobal.size();
+					attributesGlobal.add(current);
 				}
 
 				else if (line.charAt(0) != '/' && line.charAt(1) != '/') 
@@ -81,70 +93,122 @@ public class DecisionTree {
 		catch (NullPointerException e) {}
 	}
 
+	private static void solve(File input) {
+		Scanner in;
+		try {
+			in = new Scanner(input);
+			String line;
+			while(in.hasNextLine())
+			{
+				line = in.nextLine();
+
+				if ((line.charAt(0) != '%' && line.charAt(1) != '%') && (line.charAt(0) != '#' && line.charAt(1) != '#') && (line.charAt(0) != '/' && line.charAt(1) != '/'))
+				{
+					String[] attributes = line.split("[\\s,]");
+					Node currentNode = root;
+					while(!currentNode.childIsResult[getIndexOfValue(attributesGlobal.get(currentNode.attributeDecided.originalIndex), attributes[currentNode.attributeDecided.originalIndex])]){
+						currentNode = currentNode.childNodes.get(getIndexOfValue(attributesGlobal.get(currentNode.attributeDecided.originalIndex), attributes[currentNode.attributeDecided.originalIndex]));
+					}
+					System.out.println(currentNode.result[getIndexOfValue(attributesGlobal.get(currentNode.attributeDecided.originalIndex), attributes[currentNode.attributeDecided.originalIndex])]);
+				}
+
+			}
+			in.close();
+		}
+		catch (StringIndexOutOfBoundsException e) {}
+		catch (FileNotFoundException e) {}
+		catch (NoSuchElementException e) {} 
+		catch (NullPointerException e) {}
+	}
+
+	private static int getIndexOfValue(Attribute attribute, String value){
+
+		for(int i = 0; i < numAttributeValues; ++i)
+		{
+			if(attribute.possibleValues[i].equals(value)) return i;
+		}
+
+		return -1;
+	}
+
 	private static void buildTree()
 	{
 		double entropy = calculateEntropy(casesGlobal);
 		ArrayList<String[]>cases = new ArrayList<String[]>(casesGlobal);
-		addNextNodeToTree(null, entropy, 0, cases);
+		addNextNodeToTree(null, entropy, cases, attributesGlobal, -1);
 	}
 
-	private static void addNextNodeToTree(Node parent, double prevEntropy, int attributeIndex, ArrayList<String[]> cases)
+	private static void addNextNodeToTree(Node parent, double prevEntropy, ArrayList<String[]> cases, ArrayList<Attribute> attributes, int numAttribute)
 	{
-		int    bestIndex  = 0;
+		//find best attribute
+		int    bestIndex  = -1;
 		double minEntropy = Integer.MAX_VALUE;
-		for(int i = 0; i < attributes.size(); ++i)
+		for(int j = 0; j < attributes.size(); ++j)
 		{
-			if(attributes.size() -1 == 0){
-				parent.childIsResult[i] = true;
-				parent.result[i] = classLabels[getMajority(cases)];
+			double entropy = calculateConditionalEntropy(cases, attributes.get(j), j);
+			if(modelFlag == 0){
+				double informationGain = prevEntropy - entropy;
+				System.out.println(attributes.get(j).name + " " + informationGain);
 			}
-			else{
-				boolean resultFound = false;
-				boolean[] allNotSame = new boolean[classLabels.length];
-				for(int j = 0; j < cases.size(); ++j)
-				{
-					for(int k = 0; k < classLabels.length; ++k)
-					{
-						String[] example = cases.get(j);
-						if(!(example[example.length-1].equals(classLabels[k]))) allNotSame[k] = true;
-					}
-				}
-
-				for(int j = 0; j < classLabels.length; ++j)
-				{
-					if(!allNotSame[j]){
-						parent.childIsResult[i] = true;
-						parent.result[i] = classLabels[j];
-						resultFound = true;
-					}
-				}
-
-				if(!resultFound){
-					double entropy = calculateConditionalEntropy(cases, attributes.get(i), i);
-					double informationGain = prevEntropy - entropy;
-					if(modelFlag == 0){
-						System.out.println(attributes.get(i).name + " " + informationGain);
-					}
-					if(entropy < minEntropy)
-					{
-						minEntropy = entropy;
-						bestIndex = i;
-					}
-				}
+			if(entropy < minEntropy)
+			{
+				minEntropy = entropy;
+				bestIndex = j;
 			}
 		}
-		Node newNode = new Node(attributes.size() -1);
+		Node newNode = new Node(numAttributeValues);
+		newNode.attributeDecided = attributes.get(bestIndex);
 		if(parent == null)
 			root = newNode;
 		else 
-			parent.childNodes.set(attributeIndex, newNode);
+			parent.childNodes.put(numAttribute, newNode);
+
 		if(modelFlag != 0)
 		{
-			for(int i = 0; i < numAttributeValues; ++i)
+			for(int k = 0; k < numAttributeValues; ++k)
 			{
-				addNextNodeToTree(newNode, minEntropy, i, arrayListWithout(cases, bestIndex, attributes.get(bestIndex).possibleValues[i]));
+				if(!childIsLeaf(newNode, k, cases, attributes)){
+					cases = arrayListWhereIndexIsValue(cases, bestIndex, attributes.get(bestIndex).possibleValues[k]);
+					cases = arrayListWithoutAttribute(cases, bestIndex);
+					attributes.remove(bestIndex);
+					addNextNodeToTree(newNode, minEntropy, cases, attributes, k);
+				}
 			}
 		}
+
+	}
+
+	private static boolean childIsLeaf(Node parent, int attributeIndex, ArrayList<String[]> cases, ArrayList<Attribute> attributes){
+		//as far as can go
+		if(attributes.size()-1 <= 0){
+			parent.childIsResult[attributeIndex] = true;
+			parent.result[attributeIndex] = classLabels[getMajority(cases)];
+
+			return true;
+		}
+		//all same
+		boolean[] allNotSame = new boolean[classLabels.length];
+		for(int j = 0; j < cases.size(); ++j)
+		{
+			for(int k = 0; k < classLabels.length; ++k)
+			{
+				String[] example = cases.get(j);
+				if(!(example[example.length-1].equals(classLabels[k]))) allNotSame[k] = true;
+			}
+		}
+
+		for(int j = 0; j < classLabels.length; ++j)
+		{
+			if(!allNotSame[j]){
+				parent.childIsResult[attributeIndex] = true;
+				parent.result[attributeIndex] = classLabels[j];
+
+				return true;			
+			}
+		}
+
+		return false;
+
 	}
 
 	private static int getMajority(ArrayList<String[]> cases)
@@ -199,10 +263,10 @@ public class DecisionTree {
 
 		for(int i = 0; i < cases.size(); ++i)
 		{
-			
+
 			for(int j = 0; j < numAttributeValues; ++j)
 			{
-				
+
 				if(cases.get(i)[index].equals(attrib.possibleValues[j])){ 
 					countWhereAttribIsValue[j]++;
 					for(int k = 0; k < classLabels.length; ++k)
@@ -215,9 +279,9 @@ public class DecisionTree {
 						}
 					}
 				}
-				
+
 			}
-			
+
 		}
 
 		double entropy[] = new double[numAttributeValues];
@@ -232,15 +296,25 @@ public class DecisionTree {
 			double count = countWhereAttribIsValue[i]/(double)cases.size();
 			result += count * entropy[i];
 		}
-		
+
 		return result;
 	}
 
-	private static ArrayList<String[]> arrayListWithout(ArrayList<String[]> original, int index, String value)
+	private static ArrayList<String[]> arrayListWhereIndexIsValue(ArrayList<String[]> original, int index, String value)
 	{
 		for(int i = 0; i < original.size(); ++i)
 		{
-			if(original.get(i)[index].equals(value)) original.remove(i);
+			if(!(original.get(i)[index].equals(value))) original.remove(i);
+
+		}
+		return original;
+	}
+
+	private static ArrayList<String[]> arrayListWithoutAttribute(ArrayList<String[]> original, int index)
+	{
+		for(int i = 0; i < original.size(); ++i)
+		{
+			original.set(i, removeElements(original.get(i), index));
 		}
 		return original;
 	}
@@ -251,7 +325,11 @@ public class DecisionTree {
 		for(int i = 0; i < size; ++i){
 			if(i != index) result.add(input[i]);
 		}
-		return result.toArray(input);
+
+		String[] newArr = new String[input.length-1];
+		result.toArray(newArr);
+
+		return newArr;
 	}
 
 }
