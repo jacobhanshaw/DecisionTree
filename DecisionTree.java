@@ -37,12 +37,12 @@ public class DecisionTree {
 	}
 
 	private static void printNode(Node currentNode, String tabString) {
-		System.out.println("{" + currentNode.attributeDecided.name + "?}");
+		System.out.print("{" + currentNode.attributeDecided.name + "?}" + "\n");
 		tabString += "\t";
 
 		for(int i = 0; i < numAttributeValues; ++i){
 			System.out.print(tabString + currentNode.attributeDecided.possibleValues[i] + " ");
-			if(currentNode.childIsResult[i]) System.out.println("(" + currentNode.result[i] + ")");
+			if(currentNode.childIsResult[i]) System.out.print("(" + currentNode.result[i] + ")" + "\n");
 			else printNode(currentNode.childNodes.get(i), tabString);
 		}
 
@@ -82,6 +82,17 @@ public class DecisionTree {
 				else if (line.charAt(0) != '/' && line.charAt(1) != '/') 
 				{
 					casesGlobal.add(line.split("[\\s,]"));
+					String example[] = line.split("[\\s,]");
+					/*
+					if(example[0].equals("1") && example[1].equals("3") && example[3].equals("1") 
+							){
+						System.out.print("There is an example: ");
+						for(int i = 0; i< example.length; ++i){
+							System.out.print(example[i] + " ");
+						}
+						System.out.println();
+					}
+					*/
 				}
 
 			}
@@ -110,6 +121,7 @@ public class DecisionTree {
 						currentNode = currentNode.childNodes.get(getIndexOfValue(attributesGlobal.get(currentNode.attributeDecided.originalIndex), attributes[currentNode.attributeDecided.originalIndex]));
 					}
 					System.out.println(currentNode.result[getIndexOfValue(attributesGlobal.get(currentNode.attributeDecided.originalIndex), attributes[currentNode.attributeDecided.originalIndex])]);
+					//if(!currentNode.result[getIndexOfValue(attributesGlobal.get(currentNode.attributeDecided.originalIndex), attributes[currentNode.attributeDecided.originalIndex])].equals(attributes[attributes.length-1])) System.out.println("ERROR");
 				}
 
 			}
@@ -134,15 +146,16 @@ public class DecisionTree {
 	private static void buildTree()
 	{
 		double entropy = calculateEntropy(casesGlobal);
-		ArrayList<String[]>cases = new ArrayList<String[]>(casesGlobal);
-		addNextNodeToTree(null, entropy, cases, attributesGlobal, -1);
+		ArrayList<String[]>cases = deepCopyString(casesGlobal);
+		ArrayList<Attribute>attributes = new ArrayList<Attribute>(attributesGlobal);
+		addNextNodeToTree(null, entropy, cases, attributes, -1);
 	}
 
 	private static void addNextNodeToTree(Node parent, double prevEntropy, ArrayList<String[]> cases, ArrayList<Attribute> attributes, int numAttribute)
 	{
 		//find best attribute
 		int    bestIndex  = -1;
-		double minEntropy = Integer.MAX_VALUE;
+		double minEntropy = Double.MAX_VALUE;
 		for(int j = 0; j < attributes.size(); ++j)
 		{
 			double entropy = calculateConditionalEntropy(cases, attributes.get(j), j);
@@ -167,11 +180,13 @@ public class DecisionTree {
 		{
 			for(int k = 0; k < numAttributeValues; ++k)
 			{
-				if(!childIsLeaf(newNode, k, cases, attributes)){
-					cases = arrayListWhereIndexIsValue(cases, bestIndex, attributes.get(bestIndex).possibleValues[k]);
-					cases = arrayListWithoutAttribute(cases, bestIndex);
-					attributes.remove(bestIndex);
-					addNextNodeToTree(newNode, minEntropy, cases, attributes, k);
+				ArrayList<String[]> casesCopy = deepCopyString(cases);
+				casesCopy = arrayListWhereIndexIsValue(casesCopy, bestIndex, attributes.get(bestIndex).possibleValues[k]);
+				casesCopy = arrayListWithoutAttribute(casesCopy, bestIndex);
+				ArrayList<Attribute> attributesCopy = new ArrayList<Attribute>(attributes);
+				attributesCopy.remove(bestIndex);
+				if(!childIsLeaf(newNode, k, casesCopy, attributesCopy)){
+					addNextNodeToTree(newNode, minEntropy, casesCopy, attributesCopy, k);
 				}
 			}
 		}
@@ -180,13 +195,14 @@ public class DecisionTree {
 
 	private static boolean childIsLeaf(Node parent, int attributeIndex, ArrayList<String[]> cases, ArrayList<Attribute> attributes){
 		//as far as can go
-		if(attributes.size()-1 <= 0){
+		if(attributes.size() <= 0){
 			parent.childIsResult[attributeIndex] = true;
 			parent.result[attributeIndex] = classLabels[getMajority(cases)];
 
 			return true;
 		}
 		//all same
+		
 		boolean[] allNotSame = new boolean[classLabels.length];
 		for(int j = 0; j < cases.size(); ++j)
 		{
@@ -203,10 +219,12 @@ public class DecisionTree {
 				parent.childIsResult[attributeIndex] = true;
 				parent.result[attributeIndex] = classLabels[j];
 
+			//	if(cases.size() == 0)parent.result[attributeIndex] = "Undefined";
+
 				return true;			
 			}
 		}
-
+		
 		return false;
 
 	}
@@ -223,7 +241,7 @@ public class DecisionTree {
 				String[] example = cases.get(i);
 				if(example[example.length-1].equals(classLabels[j])){ 
 					a[j]++;
-					if(a[j] > maxIndex) maxIndex = j;
+					if(a[j] > a[maxIndex]) maxIndex = j;
 				}
 			}
 		}
@@ -291,12 +309,15 @@ public class DecisionTree {
 			for(int j = 0; j < classLabels.length; ++j)
 			{
 				double prob = countForAttribThatIsClass[i][j]/totalForAttribThatIsClass[i];
-				if(prob != 0 && countForAttribThatIsClass[i][j] != 0 && totalForAttribThatIsClass[i] != 0) entropy[i] -= prob * (Math.log(prob)/Math.log(classLabels.length));
+				if(prob != 0 && prob != 1 && countForAttribThatIsClass[i][j] != 0 && totalForAttribThatIsClass[i] != 0){
+					entropy[i] -= (prob * (Math.log(prob)/Math.log(classLabels.length)));
+				}
 			}
 			double count = countWhereAttribIsValue[i]/(double)cases.size();
 			result += count * entropy[i];
+			
 		}
-
+	
 		return result;
 	}
 
@@ -304,8 +325,10 @@ public class DecisionTree {
 	{
 		for(int i = 0; i < original.size(); ++i)
 		{
-			if(!(original.get(i)[index].equals(value))) original.remove(i);
-
+			if(!(original.get(i)[index].equals(value))){
+				original.remove(i);
+				--i;
+			}
 		}
 		return original;
 	}
@@ -319,7 +342,7 @@ public class DecisionTree {
 		return original;
 	}
 
-	public static String[] removeElements(String[] input, int index) {
+	private static String[] removeElements(String[] input, int index) {
 		ArrayList<String> result = new ArrayList<String>();
 		int size = input.length;
 		for(int i = 0; i < size; ++i){
@@ -330,6 +353,18 @@ public class DecisionTree {
 		result.toArray(newArr);
 
 		return newArr;
+	}
+	
+	private static ArrayList<String[]> deepCopyString(ArrayList<String[]> original) {
+		ArrayList<String[]> clone = new ArrayList<String[]>();
+		for(int i = 0; i < original.size(); ++i){
+			String [] newArray = new String[original.get(i).length];
+			for (int j = 0; j < original.get(i).length; ++ j){
+				newArray[j] = original.get(i)[j];
+			}
+		    clone.add(newArray);
+		}
+		return clone;
 	}
 
 }
